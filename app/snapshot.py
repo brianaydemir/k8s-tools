@@ -10,10 +10,12 @@ import pathlib
 import sys
 from typing import Any, Dict
 
-import kubernetes  # type: ignore[import-untyped]
+import kubernetes.client as k8s  # type: ignore[import-untyped]
+import kubernetes.config  # type: ignore[import-untyped]
 
-SNAPSHOT_DIR = pathlib.Path(os.environ.get("SNAPSHOT_DIR", "/snapshots"))
+NAMESPACE = os.environ.get("NAMESPACE", "NAMESPACE not defined")
 VERIFY_SSL = os.environ.get("VERIFY_SSL", "yes")
+SNAPSHOT_DIR = pathlib.Path(os.environ.get("SNAPSHOT_DIR", "/snapshots"))
 
 Snapshot = Dict[str, Dict[str, Any]]
 
@@ -25,25 +27,45 @@ def get_current_time() -> str:
     return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
 
 
-def get_client() -> kubernetes.client.CoreV1Api:
+def get_api_client() -> k8s.ApiClient:
     """
-    Returns a client object for interacting with a Kubernetes cluster.
+    Returns an API client configured from the default configuration sources.
     """
-    config = kubernetes.client.Configuration()
+    config = k8s.Configuration()
     kubernetes.config.load_config(client_configuration=config)
 
     if VERIFY_SSL == "no":
         config.verify_ssl = False
 
-    return kubernetes.client.CoreV1Api(kubernetes.client.ApiClient(config))
+    return k8s.ApiClient(config)
 
 
-def scan_cronjobs(k8s: kubernetes.client.CoreV1Api, data: Snapshot) -> None:
-    raise NotImplementedError
+def get_json(api_route, *args, **kwargs) -> Dict[str, Any]:
+    """
+    Returns the raw JSON response from an API route.
+    """
+    response = api_route(*args, _preload_content=False, **kwargs)
+    return json.loads(response.data)  # type: ignore[no-any-return]
 
 
-def scan_pods(k8s: kubernetes.client.CoreV1Api, data: Snapshot) -> None:
-    raise NotImplementedError
+def scan_cronjobs(client: k8s.ApiClient, data: Snapshot) -> None:
+    api = k8s.BatchV1Api(client)
+    items = get_json(api.list_namespaced_cron_job, NAMESPACE).get("items", [])
+
+    for item in items:
+        data["cronjobs"][item["metadata"]["name"]] = {
+            "suspend": item["spec"]["suspend"],
+            "lastScheduleTime": item["status"].get("lastScheduleTime"),
+            "lastSuccessfulTime": item["status"].get("lastSuccessfulTime"),
+        }
+
+
+def scan_pods(client: k8s.ApiClient, data: Snapshot) -> None:
+    api = k8s.CoreV1Api(client)
+    items = get_json(api.list_namespaced_pod, NAMESPACE).get("items", [])
+
+    for item in items:
+        data["pods"][item["metadata"]["name"]] = {}
 
 
 def main() -> None:
@@ -54,11 +76,11 @@ def main() -> None:
         "pods": {},
         "metadata": {"version": "1", "start": get_current_time()},
     }
-    k8s = get_client()
+    client = get_api_client()
     snapshot_file = SNAPSHOT_DIR / f'{data["metadata"]["start"]}.json'
 
-    scan_cronjobs(k8s, data)
-    scan_pods(k8s, data)
+    scan_cronjobs(client, data)
+    scan_pods(client, data)
     data["metadata"]["end"] = get_current_time()
 
     with open(snapshot_file, encoding="utf-8", mode="w") as fp:
