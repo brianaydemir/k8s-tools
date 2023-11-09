@@ -54,9 +54,10 @@ def scan_cronjobs(client: k8s.ApiClient, data: Snapshot) -> None:
 
     for item in items:
         data["cronjobs"][item["metadata"]["name"]] = {
-            "suspend": item["spec"]["suspend"],
-            "lastScheduleTime": item["status"].get("lastScheduleTime"),
-            "lastSuccessfulTime": item["status"].get("lastSuccessfulTime"),
+            "spec": {
+                "suspend": item["spec"]["suspend"],
+            },
+            "status": item["status"],
         }
 
 
@@ -65,7 +66,9 @@ def scan_pods(client: k8s.ApiClient, data: Snapshot) -> None:
     items = get_json(api.list_namespaced_pod, NAMESPACE).get("items", [])
 
     for item in items:
-        data["pods"][item["metadata"]["name"]] = {}
+        data["pods"][item["metadata"]["name"]] = {
+            "status": item["status"],
+        }
 
 
 def main() -> None:
