@@ -15,6 +15,7 @@ import ssl
 import sys
 from typing import Any, Dict
 
+import dateutil.parser  # type: ignore[import-untyped]
 import humanize
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "SMTP_HOST not defined")
@@ -26,6 +27,33 @@ SUBJECT = os.environ.get("SUBJECT", "k8s status report")
 SNAPSHOT_DIR = pathlib.Path(os.environ.get("SNAPSHOT_DIR", "/snapshots"))
 
 Snapshot = Dict[str, Dict[str, Any]]
+
+
+def get_current_datetime() -> datetime.datetime:
+    """
+    Returns the current UTC time.
+    """
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+
+
+def is_failed_cronjob(data: Snapshot) -> str:
+    """
+    Returns a string describing the failure state, if any, of a CronJob.
+    """
+    if data["spec"]["suspend"]:
+        return ""
+    if not (raw_schedule := data["status"].get("lastScheduleTime")):
+        return "Never scheduled"
+    if not (raw_successful := data["status"].get("lastSuccessfulTime")):
+        return "Never successfully ran"
+
+    schedule = dateutil.parser.isoparse(raw_schedule)
+    successful = dateutil.parser.isoparse(raw_successful)
+
+    if abs(schedule - successful) >= datetime.timedelta(days=1):
+        delta = humanize.naturaldelta(abs(get_current_datetime() - successful))
+        return f"Has not run successfully in {delta}"
+    return ""
 
 
 def load_snapshot(path: os.PathLike) -> Snapshot:
@@ -40,11 +68,52 @@ def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
     """
     Returns a new snapshot that is `current` and how it changed from `previous`.
     """
-    raise NotImplementedError
+    data: Snapshot = {
+        "cronjobs": {},
+        "pods": {},
+        "metadata": {
+            "now": current["metadata"]["start"],
+        },
+    }
+
+    now = current["metadata"]["start"]
+    earlier = previous.get("metadata", {}).get("start", now)
+    dt_now = datetime.datetime.fromisoformat(now)
+    dt_earlier = datetime.datetime.fromisoformat(earlier)
+    data["metadata"]["delta"] = dt_now - dt_earlier
+
+    for name in set(current["cronjobs"]) | set(previous.get("cronjobs", {})):
+        descriptors = []
+        if name not in current["cronjobs"]:
+            descriptors.append("Deleted")
+        else:
+            if name not in previous.get("cronjobs", {}):
+                descriptors.append("New")
+            if reason := is_failed_cronjob(current["cronjobs"][name]):
+                descriptors.append(reason)
+        if descriptors:
+            data["cronjobs"][name] = ", ".join(descriptors)
+
+    return data
 
 
 def get_html(data: Snapshot) -> str:
-    raise NotImplementedError
+    html = ""
+
+    if data["metadata"]["delta"]:
+        delta = humanize.precisedelta(data["metadata"]["delta"])
+        now = data["metadata"]["now"]
+        html += f"<p>In the {delta} leading up to {now}...</p>"
+
+    if data["cronjobs"]:
+        html += "<p>Noteworthy CronJobs:</p><ul>"
+        for name in sorted(data["cronjobs"]):
+            html += f"<li>{name}: {data['cronjobs'][name]}</li>"
+        html += "</ul>"
+    else:
+        html += "<p>Nothing to report for CronJobs.</p>"
+
+    return html
 
 
 def send_email(data: Snapshot) -> None:
