@@ -48,10 +48,22 @@ def get_json(api_route, *args, **kwargs) -> Dict[str, Any]:
     return json.loads(response.data)  # type: ignore[no-any-return]
 
 
-def scan_cronjobs(client: k8s.ApiClient, data: Snapshot) -> None:
-    api = k8s.BatchV1Api(client)
-    items = get_json(api.list_namespaced_cron_job, NAMESPACE).get("items", [])
+def scan_apps(client: k8s.ApiClient, data: Snapshot) -> None:
+    api = k8s.AppsV1Api(client)
 
+    items = get_json(api.list_namespaced_deployment, NAMESPACE).get("items", [])
+    for item in items:
+        data["deployments"][item["metadata"]["name"]] = {"status": item["status"]}
+
+    items = get_json(api.list_namespaced_stateful_set, NAMESPACE).get("items", [])
+    for item in items:
+        data["statefulsets"][item["metadata"]["name"]] = {"status": item["status"]}
+
+
+def scan_batch(client: k8s.ApiClient, data: Snapshot) -> None:
+    api = k8s.BatchV1Api(client)
+
+    items = get_json(api.list_namespaced_cron_job, NAMESPACE).get("items", [])
     for item in items:
         data["cronjobs"][item["metadata"]["name"]] = {
             "spec": {
@@ -60,15 +72,17 @@ def scan_cronjobs(client: k8s.ApiClient, data: Snapshot) -> None:
             "status": item["status"],
         }
 
+    items = get_json(api.list_namespaced_job, NAMESPACE).get("items", [])
+    for item in items:
+        data["jobs"][item["metadata"]["name"]] = {"status": item["status"]}
 
-def scan_pods(client: k8s.ApiClient, data: Snapshot) -> None:
+
+def scan_core(client: k8s.ApiClient, data: Snapshot) -> None:
     api = k8s.CoreV1Api(client)
     items = get_json(api.list_namespaced_pod, NAMESPACE).get("items", [])
 
     for item in items:
-        data["pods"][item["metadata"]["name"]] = {
-            "status": item["status"],
-        }
+        data["pods"][item["metadata"]["name"]] = {"status": item["status"]}
 
 
 def main() -> None:
@@ -76,14 +90,18 @@ def main() -> None:
 
     data: Snapshot = {
         "cronjobs": {},
+        "jobs": {},
+        "deployments": {},
+        "statefulsets": {},
         "pods": {},
         "metadata": {"version": "1", "start": get_current_time()},
     }
     client = get_api_client()
     snapshot_file = SNAPSHOT_DIR / f'{data["metadata"]["start"]}.json'
 
-    scan_cronjobs(client, data)
-    scan_pods(client, data)
+    scan_apps(client, data)
+    scan_batch(client, data)
+    scan_core(client, data)
     data["metadata"]["end"] = get_current_time()
 
     with open(snapshot_file, encoding="utf-8", mode="w") as fp:

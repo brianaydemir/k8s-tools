@@ -56,6 +56,26 @@ def is_failed_cronjob(data: Snapshot) -> str:
     return ""
 
 
+def is_failed_deployment(data: Snapshot) -> str:
+    """
+    Returns a string describing the failure state, if any, of a Deployment.
+    """
+    desired = data["status"].get("replicas", 0)
+    ready = data["status"].get("readyReplicas", 0)
+
+    return "" if ready == desired else f"{ready}/{desired} Ready"
+
+
+def is_failed_statefulset(data: Snapshot) -> str:
+    """
+    Returns a string describing the failure state, if any, of a StatefulSet.
+    """
+    desired = data["status"].get("replicas", 0)
+    ready = data["status"].get("readyReplicas", 0)
+
+    return "" if ready == desired else f"{ready}/{desired} Ready"
+
+
 def load_snapshot(path: os.PathLike) -> Snapshot:
     """
     Returns a snapshot that was previously created by `app.snapshot`.
@@ -70,6 +90,9 @@ def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
     """
     data: Snapshot = {
         "cronjobs": {},
+        "jobs": {},
+        "deployments": {},
+        "statefulsets": {},
         "pods": {},
         "metadata": {
             "now": current["metadata"]["start"],
@@ -94,6 +117,30 @@ def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
         if descriptors:
             data["cronjobs"][name] = ", ".join(descriptors)
 
+    for name in set(current["deployments"]) | set(previous.get("deployments", {})):
+        descriptors = []
+        if name not in current["deployments"]:
+            descriptors.append("Deleted")
+        else:
+            if name not in previous.get("deployments", {}):
+                descriptors.append("New")
+            if reason := is_failed_deployment(current["deployments"][name]):
+                descriptors.append(reason)
+        if descriptors:
+            data["deployments"][name] = ", ".join(descriptors)
+
+    for name in set(current["statefulsets"]) | set(previous.get("statefulsets", {})):
+        descriptors = []
+        if name not in current["statefulsets"]:
+            descriptors.append("Deleted")
+        else:
+            if name not in previous.get("statefulsets", {}):
+                descriptors.append("New")
+            if reason := is_failed_statefulset(current["statefulsets"][name]):
+                descriptors.append(reason)
+        if descriptors:
+            data["statefulsets"][name] = ", ".join(descriptors)
+
     return data
 
 
@@ -112,6 +159,22 @@ def get_html(data: Snapshot) -> str:
         html += "</ul>"
     else:
         html += "<p>Nothing to report for CronJobs.</p>"
+
+    if data["deployments"]:
+        html += "<p>Noteworthy Deployments:</p><ul>"
+        for name in sorted(data["deployments"]):
+            html += f"<li>{name}: {data['deployments'][name]}</li>"
+        html += "</ul>"
+    else:
+        html += "<p>Nothing to report for Deployments.</p>"
+
+    if data["statefulsets"]:
+        html += "<p>Noteworthy StatefulSets:</p><ul>"
+        for name in sorted(data["statefulsets"]):
+            html += f"<li>{name}: {data['statefulsets'][name]}</li>"
+        html += "</ul>"
+    else:
+        html += "<p>Nothing to report for StatefulSets.</p>"
 
     return html
 
