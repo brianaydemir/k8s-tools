@@ -40,11 +40,16 @@ def is_failed_cronjob(data: Snapshot) -> str:
     """
     Returns a string describing the failure state, if any, of a CronJob.
     """
+    raw_schedule = data["status"].get("lastScheduleTime")
+    raw_successful = data["status"].get("lastSuccessfulTime")
+
     if data["spec"]["suspend"]:
         return ""
-    if not (raw_schedule := data["status"].get("lastScheduleTime")):
+    if not raw_schedule:
+        if raw_successful:
+            return "Never scheduled (but has run successfully)"
         return "Never scheduled"
-    if not (raw_successful := data["status"].get("lastSuccessfulTime")):
+    if not raw_successful:
         return "Never successfully ran"
 
     schedule = dateutil.parser.isoparse(raw_schedule)
@@ -86,17 +91,15 @@ def load_snapshot(path: os.PathLike) -> Snapshot:
 
 def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
     """
-    Returns a new snapshot that is `current` and how it changed from `previous`.
+    Returns a new snapshot highlighting objects that might need attention.
     """
     data: Snapshot = {
         "cronjobs": {},
-        "jobs": {},
         "deployments": {},
-        "statefulsets": {},
+        "jobs": {},
         "pods": {},
-        "metadata": {
-            "now": current["metadata"]["start"],
-        },
+        "statefulsets": {},
+        "metadata": {"now": current["metadata"]["start"]},
     }
 
     now = current["metadata"]["start"]
@@ -105,41 +108,22 @@ def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
     dt_earlier = datetime.datetime.fromisoformat(earlier)
     data["metadata"]["delta"] = dt_now - dt_earlier
 
-    for name in set(current["cronjobs"]) | set(previous.get("cronjobs", {})):
-        descriptors = []
-        if name not in current["cronjobs"]:
-            descriptors.append("Deleted")
-        else:
-            if name not in previous.get("cronjobs", {}):
-                descriptors.append("New")
-            if reason := is_failed_cronjob(current["cronjobs"][name]):
-                descriptors.append(reason)
-        if descriptors:
-            data["cronjobs"][name] = ", ".join(descriptors)
+    def compare_resource(api_resource, is_failed) -> None:
+        for name in set(current[api_resource]) | set(previous.get(api_resource, {})):
+            descriptors = []
+            if name not in current[api_resource]:
+                descriptors.append("Deleted")
+            else:
+                if name not in previous.get(api_resource, {}):
+                    descriptors.append("New")
+                if reason := is_failed(current[api_resource][name]):
+                    descriptors.append(reason)
+            if descriptors:
+                data[api_resource][name] = ", ".join(descriptors)
 
-    for name in set(current["deployments"]) | set(previous.get("deployments", {})):
-        descriptors = []
-        if name not in current["deployments"]:
-            descriptors.append("Deleted")
-        else:
-            if name not in previous.get("deployments", {}):
-                descriptors.append("New")
-            if reason := is_failed_deployment(current["deployments"][name]):
-                descriptors.append(reason)
-        if descriptors:
-            data["deployments"][name] = ", ".join(descriptors)
-
-    for name in set(current["statefulsets"]) | set(previous.get("statefulsets", {})):
-        descriptors = []
-        if name not in current["statefulsets"]:
-            descriptors.append("Deleted")
-        else:
-            if name not in previous.get("statefulsets", {}):
-                descriptors.append("New")
-            if reason := is_failed_statefulset(current["statefulsets"][name]):
-                descriptors.append(reason)
-        if descriptors:
-            data["statefulsets"][name] = ", ".join(descriptors)
+    compare_resource("cronjobs", is_failed_cronjob)
+    compare_resource("deployments", is_failed_deployment)
+    compare_resource("statefulsets", is_failed_statefulset)
 
     return data
 
@@ -150,31 +134,22 @@ def get_html(data: Snapshot) -> str:
     if data["metadata"]["delta"]:
         delta = humanize.precisedelta(data["metadata"]["delta"])
         now = data["metadata"]["now"]
-        html += f"<p>In the {delta} leading up to {now}...</p>"
+        html += f"<p>In the {delta} leading up to {now}:</p>"
 
-    if data["cronjobs"]:
-        html += "<p>Noteworthy CronJobs:</p><ul>"
-        for name in sorted(data["cronjobs"]):
-            html += f"<li>{name}: {data['cronjobs'][name]}</li>"
-        html += "</ul>"
-    else:
-        html += "<p>Nothing to report for CronJobs.</p>"
+    def get_resource_html(api_resource, api_resource_name) -> str:
+        html = ""
+        if data[api_resource]:
+            html += f"<p>Noteworthy {api_resource_name}:</p><ul>"
+            for name in sorted(data[api_resource]):
+                html += f"<li>{name}: {data[api_resource][name]}</li>"
+            html += "</ul>"
+        else:
+            html += f"<p>Nothing to report for {api_resource_name}.</p>"
+        return html
 
-    if data["deployments"]:
-        html += "<p>Noteworthy Deployments:</p><ul>"
-        for name in sorted(data["deployments"]):
-            html += f"<li>{name}: {data['deployments'][name]}</li>"
-        html += "</ul>"
-    else:
-        html += "<p>Nothing to report for Deployments.</p>"
-
-    if data["statefulsets"]:
-        html += "<p>Noteworthy StatefulSets:</p><ul>"
-        for name in sorted(data["statefulsets"]):
-            html += f"<li>{name}: {data['statefulsets'][name]}</li>"
-        html += "</ul>"
-    else:
-        html += "<p>Nothing to report for StatefulSets.</p>"
+    html += get_resource_html("cronjobs", "CronJobs")
+    html += get_resource_html("deployments", "Deployments")
+    html += get_resource_html("statefulsets", "StatefulSets")
 
     return html
 
