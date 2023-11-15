@@ -40,12 +40,12 @@ def get_api_client() -> k8s.ApiClient:
     return k8s.ApiClient(config)
 
 
-def get_json(api_route, *args, **kwargs) -> Dict[str, Any]:
+def get_json(api_route, *args, **kwargs) -> Any:
     """
     Returns the raw JSON response from an API route.
     """
     response = api_route(*args, _preload_content=False, **kwargs)
-    return json.loads(response.data)  # type: ignore[no-any-return]
+    return json.loads(response.data)
 
 
 def scan_apps(client: k8s.ApiClient, data: Snapshot) -> None:
@@ -79,8 +79,8 @@ def scan_batch(client: k8s.ApiClient, data: Snapshot) -> None:
 
 def scan_core(client: k8s.ApiClient, data: Snapshot) -> None:
     api = k8s.CoreV1Api(client)
-    items = get_json(api.list_namespaced_pod, NAMESPACE).get("items", [])
 
+    items = get_json(api.list_namespaced_pod, NAMESPACE).get("items", [])
     for item in items:
         data["pods"][item["metadata"]["name"]] = {"status": item["status"]}
 
@@ -90,10 +90,10 @@ def main() -> None:
 
     data: Snapshot = {
         "cronjobs": {},
-        "jobs": {},
         "deployments": {},
-        "statefulsets": {},
+        "jobs": {},
         "pods": {},
+        "statefulsets": {},
         "metadata": {"version": "1", "start": get_current_time()},
     }
     client = get_api_client()
