@@ -161,17 +161,17 @@ def get_html(data: Snapshot) -> str:
     if data["metadata"]["delta"]:
         delta = humanize.precisedelta(data["metadata"]["delta"])
         now = data["metadata"]["now"]
-        html += f"<p>In the {delta} leading up to {now}:</p>"
+        html += f"<p>In the {delta} leading up to {now}:</p>\n"
 
     def get_resource_html(api_resource, api_resource_name) -> str:
         html = ""
         if data[api_resource]:
-            html += f"<p>Noteworthy {api_resource_name}:</p><ul>"
+            html += f"<p>Noteworthy {api_resource_name}:</p>\n<ul>\n"
             for name in sorted(data[api_resource]):
-                html += f"<li>{name}: {data[api_resource][name]}</li>"
-            html += "</ul>"
+                html += f"<li>{name}: {data[api_resource][name]}</li>\n"
+            html += "</ul>\n"
         else:
-            html += f"<p>Nothing to report for {api_resource_name}.</p>"
+            html += f"<p>Nothing to report for {api_resource_name}.</p>\n"
         return html
 
     html += get_resource_html("cronjobs", "CronJobs")
