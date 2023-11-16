@@ -13,7 +13,7 @@ import pathlib
 import smtplib
 import ssl
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import dateutil.parser  # type: ignore[import-untyped]
 import humanize
@@ -34,6 +34,17 @@ def get_current_datetime() -> datetime.datetime:
     Returns the current UTC time.
     """
     return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+
+
+def get_owner_kinds(data: Snapshot) -> List[str]:
+    """
+    Returns the "kinds" of the objects that own the given object.
+    """
+    kinds = []
+    for owner in data.get("metadata", {}).get("ownerReferences", []):
+        if kind := owner.get("kind"):
+            kinds.append(kind)
+    return kinds
 
 
 def is_failed_cronjob(data: Snapshot) -> str:
@@ -81,6 +92,15 @@ def is_failed_statefulset(data: Snapshot) -> str:
     return "" if ready == desired else f"{ready}/{desired} Ready"
 
 
+def is_failed_pod(data: Snapshot) -> str:
+    """
+    Returns a string describing the failure state, if any, of a Pod.
+    """
+    phase: str = data["status"]["phase"]
+
+    return phase if phase in ["Pending", "Unknown"] else ""
+
+
 def load_snapshot(path: os.PathLike) -> Snapshot:
     """
     Returns a snapshot that was previously created by `app.snapshot`.
@@ -108,9 +128,15 @@ def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
     dt_earlier = datetime.datetime.fromisoformat(earlier)
     data["metadata"]["delta"] = dt_now - dt_earlier
 
-    def compare_resource(api_resource, is_failed) -> None:
+    def compare_resource(api_resource, is_failed, ignore_owned_by=None) -> None:
         for name in set(current[api_resource]) | set(previous.get(api_resource, {})):
             descriptors = []
+            if ignore_owned_by:
+                item = current[api_resource].get(name)
+                if not item:
+                    item = previous[api_resource][name]
+                if set(ignore_owned_by) & set(get_owner_kinds(item)):
+                    continue
             if name not in current[api_resource]:
                 descriptors.append("Deleted")
             else:
@@ -124,6 +150,7 @@ def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
     compare_resource("cronjobs", is_failed_cronjob)
     compare_resource("deployments", is_failed_deployment)
     compare_resource("statefulsets", is_failed_statefulset)
+    compare_resource("pods", is_failed_pod, ignore_owned_by=["Job"])
 
     return data
 
@@ -150,6 +177,7 @@ def get_html(data: Snapshot) -> str:
     html += get_resource_html("cronjobs", "CronJobs")
     html += get_resource_html("deployments", "Deployments")
     html += get_resource_html("statefulsets", "StatefulSets")
+    html += get_resource_html("pods", "Pods")
 
     return html
 

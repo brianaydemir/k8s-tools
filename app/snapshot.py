@@ -82,7 +82,12 @@ def scan_core(client: k8s.ApiClient, data: Snapshot) -> None:
 
     items = get_json(api.list_namespaced_pod, NAMESPACE).get("items", [])
     for item in items:
-        data["pods"][item["metadata"]["name"]] = {"status": item["status"]}
+        data["pods"][item["metadata"]["name"]] = {
+            "metadata": {
+                "ownerReferences": item["metadata"].get("ownerReferences", []),
+            },
+            "status": item["status"],
+        }
 
 
 def main() -> None:
