@@ -66,7 +66,9 @@ def is_failed_cronjob(data: Snapshot) -> str:
     schedule = dateutil.parser.isoparse(raw_schedule)
     successful = dateutil.parser.isoparse(raw_successful)
 
-    if abs(schedule - successful) >= datetime.timedelta(days=1):
+    # Assume that jobs do not take more than 12 hours to complete successfully.
+
+    if abs(schedule - successful) >= datetime.timedelta(hours=12):
         delta = humanize.naturaldelta(abs(get_current_datetime() - successful))
         return f"Has not run successfully in {delta}"
     return ""
