@@ -15,6 +15,7 @@ import ssl
 import sys
 from typing import Any, Dict, List
 
+import croniter  # type: ignore[import-untyped]
 import dateutil.parser  # type: ignore[import-untyped]
 import humanize
 
@@ -65,13 +66,29 @@ def is_failed_cronjob(data: Snapshot) -> str:
 
     schedule = dateutil.parser.isoparse(raw_schedule)
     successful = dateutil.parser.isoparse(raw_successful)
+    now = get_current_datetime()
 
-    # Flag jobs that have gone more than one day without a success.
+    # Check that the job is actually being scheduled.
+    # We expect that most jobs are intended to run at least weekly.
 
-    grace_period = datetime.timedelta(hours=24)
+    grace_period = datetime.timedelta(days=7)
 
-    if schedule > successful and abs(schedule - successful) > grace_period:
-        delta = humanize.naturaldelta(abs(get_current_datetime() - successful))
+    if now - schedule > grace_period:
+        delta = humanize.naturaldelta(now - schedule)
+        cron = croniter.croniter(data["spec"]["schedule"], now)
+        expected = cron.get_prev(datetime.datetime)
+        if expected <= schedule:
+            return f"Has not been scheduled in {delta} (but this might be expected)"
+        return f"Has not been scheduled in {delta}"
+
+    # Check that the job has a recorded success, taking into account the
+    # fact that the snapshot might be after the job has been scheduled but
+    # before that scheduled run has completed.
+
+    grace_period = datetime.timedelta(days=1)  # for jobs that run daily
+
+    if schedule - successful > grace_period:
+        delta = humanize.naturaldelta(now - successful)
         return f"Has not run successfully in {delta}"
     return ""
 
@@ -154,7 +171,7 @@ def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
     compare_resource("cronjobs", is_failed_cronjob)
     compare_resource("deployments", is_failed_deployment)
     compare_resource("statefulsets", is_failed_statefulset)
-    compare_resource("pods", is_failed_pod, ignore_owned_by=["Job"])
+    compare_resource("pods", is_failed_pod)
 
     return data
 

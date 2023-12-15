@@ -67,6 +67,7 @@ def scan_batch(client: k8s.ApiClient, data: Snapshot) -> None:
     for item in items:
         data["cronjobs"][item["metadata"]["name"]] = {
             "spec": {
+                "schedule": item["spec"]["schedule"],
                 "suspend": item["spec"]["suspend"],
             },
             "status": item["status"],
