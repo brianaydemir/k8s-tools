@@ -171,7 +171,8 @@ def compare_snapshots(current: Snapshot, previous: Snapshot) -> Snapshot:
     compare_resource("cronjobs", is_failed_cronjob)
     compare_resource("deployments", is_failed_deployment)
     compare_resource("statefulsets", is_failed_statefulset)
-    compare_resource("pods", is_failed_pod)
+    # Assume that CronJobs and Jobs report on their own "failed" Pods.
+    compare_resource("pods", is_failed_pod, ignore_owned_by=["Job"])
 
     return data
 
