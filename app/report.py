@@ -188,12 +188,12 @@ def get_html(data: Snapshot) -> str:
     def get_resource_html(api_resource, api_resource_name) -> str:
         html = ""
         if data[api_resource]:
-            html += f"<p>Noteworthy {api_resource_name}:</p>\n<ul>\n"
+            html += f"<p>{api_resource_name}:</p>\n<ul>\n"
             for name in sorted(data[api_resource]):
                 html += f"<li>{name}: {data[api_resource][name]}</li>\n"
             html += "</ul>\n"
         else:
-            html += f"<p>Nothing to report for {api_resource_name}.</p>\n"
+            html += f"<p>{api_resource_name}: (nothing to report)</p>\n"
         return html
 
     html += get_resource_html("cronjobs", "CronJobs")
