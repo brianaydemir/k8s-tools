@@ -13,7 +13,7 @@ import pathlib
 import smtplib
 import ssl
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 import croniter  # type: ignore[import-untyped]
 import dateutil.parser  # type: ignore[import-untyped]
@@ -22,12 +22,12 @@ import humanize
 SMTP_HOST = os.environ.get("SMTP_HOST", "SMTP_HOST not defined")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "25"))
 SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "yes")
-TO = os.environ.get("TO", "TO not defined")
 FROM = os.environ.get("FROM", "FROM not defined")
 SUBJECT = os.environ.get("SUBJECT", "k8s status report")
+TO = os.environ.get("TO", "TO not defined")
 SNAPSHOT_DIR = pathlib.Path(os.environ.get("SNAPSHOT_DIR", "/snapshots"))
 
-Snapshot = Dict[str, Dict[str, Any]]
+Snapshot = dict[str, dict[str, Any]]
 
 
 def get_current_datetime() -> datetime.datetime:
@@ -37,7 +37,7 @@ def get_current_datetime() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
 
 
-def get_owner_kinds(data: Snapshot) -> List[str]:
+def get_owner_kinds(data) -> list[str]:
     """
     Returns the "kinds" of the objects that own the given object.
     """
@@ -48,7 +48,7 @@ def get_owner_kinds(data: Snapshot) -> List[str]:
     return kinds
 
 
-def is_failed_cronjob(data: Snapshot) -> str:
+def is_failed_cronjob(data) -> str:
     """
     Returns a string describing the failure state, if any, of a CronJob.
     """
@@ -93,7 +93,7 @@ def is_failed_cronjob(data: Snapshot) -> str:
     return ""
 
 
-def is_failed_deployment(data: Snapshot) -> str:
+def is_failed_deployment(data) -> str:
     """
     Returns a string describing the failure state, if any, of a Deployment.
     """
@@ -103,7 +103,7 @@ def is_failed_deployment(data: Snapshot) -> str:
     return "" if ready == desired else f"{ready}/{desired} Ready"
 
 
-def is_failed_statefulset(data: Snapshot) -> str:
+def is_failed_statefulset(data) -> str:
     """
     Returns a string describing the failure state, if any, of a StatefulSet.
     """
@@ -113,7 +113,7 @@ def is_failed_statefulset(data: Snapshot) -> str:
     return "" if ready == desired else f"{ready}/{desired} Ready"
 
 
-def is_failed_pod(data: Snapshot) -> str:
+def is_failed_pod(data) -> str:
     """
     Returns a string describing the failure state, if any, of a Pod.
     """
@@ -126,7 +126,7 @@ def load_snapshot(path: os.PathLike) -> Snapshot:
     """
     Returns a snapshot that was previously created by `app.snapshot`.
     """
-    with open(path, encoding="utf-8", mode="r") as fp:
+    with open(path, mode="r", encoding="utf-8") as fp:
         return json.load(fp)  # type: ignore[no-any-return]
 
 
@@ -193,7 +193,7 @@ def get_html(data: Snapshot) -> str:
                 html += f"<li>{name}: {data[api_resource][name]}</li>\n"
             html += "</ul>\n"
         else:
-            html += f"<p>{api_resource_name}: (nothing to report)</p>\n"
+            html += f"<p>{api_resource_name}: Nothing to report</p>\n"
         return html
 
     html += get_resource_html("cronjobs", "CronJobs")
@@ -210,9 +210,9 @@ def send_email(data: Snapshot) -> None:
     logging.debug(html)
 
     message = email.mime.multipart.MIMEMultipart("alternative")
-    message["To"] = TO
     message["Sender"] = FROM
-    message["Subject"] = f"{SUBJECT}"
+    message["Subject"] = SUBJECT
+    message["To"] = TO
     message.attach(email.mime.text.MIMEText(html, "html"))
 
     server = smtplib.SMTP(SMTP_HOST, port=SMTP_PORT)

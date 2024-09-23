@@ -8,16 +8,16 @@ import logging
 import os
 import pathlib
 import sys
-from typing import Any, Dict
+from typing import Any
 
 import kubernetes.client as k8s  # type: ignore[import-untyped]
 import kubernetes.config  # type: ignore[import-untyped]
 
 NAMESPACE = os.environ.get("NAMESPACE", "NAMESPACE not defined")
-VERIFY_SSL = os.environ.get("VERIFY_SSL", "yes")
 SNAPSHOT_DIR = pathlib.Path(os.environ.get("SNAPSHOT_DIR", "/snapshots"))
+VERIFY_SSL = os.environ.get("VERIFY_SSL", "yes")
 
-Snapshot = Dict[str, Dict[str, Any]]
+Snapshot = dict[str, dict[str, Any]]
 
 
 def get_current_time() -> str:
@@ -110,7 +110,7 @@ def main() -> None:
     scan_core(client, data)
     data["metadata"]["end"] = get_current_time()
 
-    with open(snapshot_file, encoding="utf-8", mode="w") as fp:
+    with open(snapshot_file, mode="w", encoding="utf-8") as fp:
         json.dump(data, fp, indent=2)
     logging.info("Finished!")
 

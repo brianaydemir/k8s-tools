@@ -30,7 +30,7 @@ RUN true \
     && dnf clean all \
     && rm -rf /var/cache/dnf/* \
     #
-    && ${PY_EXE} -m pip install -U --no-cache-dir pip setuptools wheel \
+    && ${PY_EXE} -m pip install -U --no-cache-dir pip setuptools \
     && true
 
 # Install the application.
